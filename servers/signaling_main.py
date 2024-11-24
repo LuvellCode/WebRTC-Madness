@@ -1,5 +1,5 @@
 import logging
-from config import SIGNALING_HOST, SIGNALING_PORT, SIGNALING_SERVER
+from config import SIGNALING_HOST, SIGNALING_PORT, SIGNALING_SERVER, SSL_CONTEXT
 from servers.includes.models import User
 from servers.includes.enums import MessageType
 from servers.includes.messages import BaseMessage, JoinMessage, ConfirmIdMessage
@@ -61,17 +61,13 @@ async def run_signaling_server():
     """
     Main entry point. Sets up and starts the server
     """
-    import ssl
-    
-    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ssl_context.load_cert_chain(certfile="server.crt", keyfile="server.key")
-
     logger.info(f"Starting signaling server on {SIGNALING_SERVER}\n")
     
     # Setting up the server
     signaling_server.host = SIGNALING_HOST
     signaling_server.port = SIGNALING_PORT
+    signaling_server.ssl_context = SSL_CONTEXT
+
     signaling_server.logger = logger
-    signaling_server.ssl_context = ssl_context
 
     signaling_server.start()
