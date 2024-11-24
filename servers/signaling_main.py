@@ -7,12 +7,6 @@ from servers.signaling_server import signaling_server, MessageHandlerSettings
 
 from servers.logging_config import get_logger
 
-
-"""
-Mega setup functions.
-Technical etc.
-"""
-
 logger = get_logger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -55,17 +49,17 @@ async def handle_join(user:User, payload:dict):
 @signaling_server.register_handler(MessageType.CANDIDATE, MessageHandlerSettings(pass_type=True))
 @log_execution
 async def handle_rtc(user:User, payload:dict, message_type:MessageType):
+    """
+    Server doesn't modify anything in case of RTC requests, just broadcasts it to other clients.
+    """
+
     message = BaseMessage(message_type, payload)
     await signaling_server.broadcast_message(user, message, include_sender=False)
 
 
-"""
-Other Functions
-"""
-
 async def run_signaling_server():
     """
-    Main entry point. Starts the server
+    Main entry point. Sets up and starts the server
     """
     import ssl
     

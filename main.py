@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from threading import Thread
-from servers.signaling import run_signaling_server
+from servers.signaling_main import run_signaling_server
 from servers.web import run_web_server
 from cert import gen_cert
 
