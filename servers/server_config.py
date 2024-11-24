@@ -1,12 +1,6 @@
 from servers.includes.enums import MessageType
 from servers.includes.models import User
-from servers.includes.messages import BaseMessage
 from dataclasses import dataclass
-from typing import Callable, Dict
-
-"""
-!!!WORK IN PROGRESS!!!
-"""
 
 
 @dataclass
@@ -15,27 +9,27 @@ class MessageHandlerSettings:
 
 @dataclass
 class MessageHandler:
-    func: Callable
+    func: function
     settings: MessageHandlerSettings
 
 
 # Глобальна конфігурація сервера
 class ServerConfig:
     def __init__(self):
-        self.message_handlers: Dict[MessageType, MessageHandler] = {}
+        self.message_handlers: dict[MessageType, MessageHandler] = {}
         self.supported_message_types: set[MessageType] = set()
-        self.connected_clients: Dict[str, User] = {}
+        self.connected_clients: dict[str, User] = {}
 
-    def register_handler(self, message_type: MessageType, func: Callable, settings: dict = None):
+    def register_handler(self, message_type: MessageType, func: function, settings: MessageHandlerSettings = None):
         """
-        Register handler for type
+        Register handler for specific type
         """
-        self.message_handlers[message_type] = MessageHandler(func=func, settings=settings or {})
+        self.message_handlers[message_type] = MessageHandler(func=func, settings=settings or MessageHandlerSettings())
         self.supported_message_types.add(message_type)
 
     def get_handler(self, message_type: MessageType) -> MessageHandler:
         """
-        Get handler for type
+        Get handler for specific type
         """
         return self.message_handlers.get(message_type)
 

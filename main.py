@@ -1,10 +1,15 @@
 import asyncio
+import logging
 from threading import Thread
 from servers.signaling import run_signaling_server
 from servers.web import run_web_server
 from cert import gen_cert
 
+from servers.logging_config import get_logger
+
 async def main():
+    logger = get_logger(__name__)
+    logger.setLevel(logging.DEBUG)
     #print("\nGenerating cert....")
     #gen_cert() # Auto-generating cert
 
