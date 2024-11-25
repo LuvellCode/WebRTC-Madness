@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 import inspect
 import logging
+from typing import Any
 from servers.includes.enums import MessageType
 from servers.includes.models import User
 from servers.includes.messages import BaseMessage
@@ -94,7 +95,7 @@ class SignalingServer:
 
             # Dynamic args building based on required_args for current handler
             # Retreive locals for each name
-            args:dict[str, any] = {key: locals().get(key) for key in handler_config.required_args}
+            args:dict[str, Any] = {key: locals().get(key) for key in handler_config.required_args}
 
             await func(**args)
             self.logger.info(f"Message {message_type} handled successfully for user {user.name} ({user.id})")
