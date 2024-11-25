@@ -30,7 +30,7 @@ async def handle_confirm_id(user:User, payload:dict):
      2. Send User.id
     """
     user.name = payload.get("name")  # User name update
-    print(f"Handshaking with `{user.name}`. Sending ID {user.id} back.")
+    signaling_server.logger.info(f"Handshaking with user name `{user.name}`. Sending user ID `{user.id}` back.")
 
     message = ConfirmIdMessage(user)
     await signaling_server.send_new_message(send_to=user, message=message)
@@ -38,8 +38,8 @@ async def handle_confirm_id(user:User, payload:dict):
 @signaling_server.register_handler(MessageType.JOIN)
 @log_execution
 async def handle_join(user:User, payload:dict):
-    logger.info(f"Client {user.id} wants to join with name: {user.name}")
-    logger.info(f"Passing the User object to all connected clients..")
+    signaling_server.logger.info(f"Client {user.id} wants to join with name: {user.name}")
+    signaling_server.logger.info(f"Passing the User object to all connected clients..")
 
     message = JoinMessage(user)
     await signaling_server.broadcast_message(user, message, include_sender=False)
