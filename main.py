@@ -13,9 +13,9 @@ async def main():
     #print("\nGenerating cert....")
     #gen_cert() # Auto-generating cert
 
-    print("\nStarting WEB....")
-    web_thread = Thread(target=run_web_server, daemon=True)
-    web_thread.start()
+    # print("\nStarting WEB....")
+    #web_thread = Thread(target=run_web_server, daemon=True)
+    #web_thread.start()
 
     print("\nStarting SIGNAL....")
     await run_signaling_server()

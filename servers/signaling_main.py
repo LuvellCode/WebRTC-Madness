@@ -10,19 +10,10 @@ from servers.logging_config import get_logger
 logger = get_logger(__name__)
 logger.setLevel(logging.DEBUG)
 
-
-def log_execution(func):
-    async def wrapper(*args, **kwargs):
-        logger.debug(f"Executing {func.__name__} with args {args} and kwargs {kwargs}")
-        return await func(*args, **kwargs)
-    return wrapper
-
 """
 Handlers Section
 """
-
 @signaling_server.register_handler(MessageType.CONFIRM_ID)
-@log_execution
 async def handle_confirm_id(user:User, payload:dict):
     """
     Handshake.
@@ -30,24 +21,22 @@ async def handle_confirm_id(user:User, payload:dict):
      2. Send User.id
     """
     user.name = payload.get("name")  # User name update
-    signaling_server.logger.info(f"Handshaking with user name `{user.name}`. Sending user ID `{user.id}` back.")
+    signaling_server.logger.debug(f"Handshaking with user name `{user.name}`. Sending user ID `{user.id}` back.")
 
     message = ConfirmIdMessage(user)
     await signaling_server.send_new_message(send_to=user, message=message)
 
 @signaling_server.register_handler(MessageType.JOIN)
-@log_execution
 async def handle_join(user:User, payload:dict):
-    signaling_server.logger.info(f"Client {user.id} wants to join with name: {user.name}")
-    signaling_server.logger.info(f"Passing the User object to all connected clients..")
+    signaling_server.logger.debug(f"Client {user.id} wants to join with name: {user.name}")
+    signaling_server.logger.debug(f"Passing the User object to all connected clients..")
 
     message = JoinMessage(user)
     await signaling_server.broadcast_message(user, message, include_sender=False)
 
-@signaling_server.register_handler(MessageType.OFFER, MessageHandlerSettings(pass_type=True))
-@signaling_server.register_handler(MessageType.ANSWER, MessageHandlerSettings(pass_type=True))
-@signaling_server.register_handler(MessageType.CANDIDATE, MessageHandlerSettings(pass_type=True))
-@log_execution
+@signaling_server.register_handler(MessageType.OFFER)
+@signaling_server.register_handler(MessageType.ANSWER)
+@signaling_server.register_handler(MessageType.CANDIDATE)
 async def handle_rtc(user:User, payload:dict, message_type:MessageType):
     """
     Server doesn't modify anything in case of RTC requests, just broadcasts it to other clients.
@@ -70,4 +59,4 @@ async def run_signaling_server():
 
     signaling_server.logger = logger
 
-    signaling_server.start()
+    await signaling_server.start()

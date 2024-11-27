@@ -34,7 +34,7 @@ class ConfirmIdMessage(BaseMessage):
      - Client receives the User.id
     """
     def __init__(self, user:User):
-        super().__init__(type=MessageType.JOIN, payload={"id": user.id})
+        super().__init__(type=MessageType.CONFIRM_ID, payload={"user": user.to_dict()})  # Can be different
 
 @dataclass
 class JoinMessage(BaseMessage):

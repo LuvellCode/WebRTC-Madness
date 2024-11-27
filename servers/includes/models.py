@@ -8,3 +8,9 @@ class User:
     
     def to_dict(self):
         return {"id": self.id, "name": self.name}
+    
+    def __str__(self) -> str:
+        return self.to_dict().__str__()
+    
+    def __repr__(self) -> str:
+        return f"User{self.__str__()}"

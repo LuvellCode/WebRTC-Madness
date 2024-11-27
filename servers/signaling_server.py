@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import dataclass
 import inspect
 import logging
-from typing import Any
+from typing import Any, Callable
 from servers.includes.enums import MessageType
 from servers.includes.models import User
 from servers.includes.messages import BaseMessage
@@ -18,20 +18,23 @@ class MessageHandlerSettings:
 
     :Important: will be set a default value if not passed to a registrar
     """
-    log_execution:bool = False
+    log_execution:bool = True
 
 @dataclass
 class MessageHandler:
     """
     Purpose: Configured automatically by Signaling Server
     """
-    func: function
+    func: Callable
     settings: MessageHandlerSettings
     required_args: list[str]
 
 class SignalingServer:
+
     SUPPORTED_HANDLER_ARGS = {"user", "payload", "message_type"}
-    def __init__(self, host, port, logger:logging.Logger=None, ssl_context=None):
+    """ A whitelist for locals(). All other vars will not be passed"""
+
+    def __init__(self, host=None, port=None, logger:logging.Logger=None, ssl_context=None):
         self.host = host
         self.port = port
         self.ssl_context = ssl_context
@@ -48,8 +51,24 @@ class SignalingServer:
 
     async def start(self):
         self.logger.info(f"Starting signaling server on {self.host}:{self.port}")
+
+        self.log_registered_handlers()
+
         async with websockets.serve(self.signaling_handler, self.host, self.port, ssl=self.ssl_context):
             await asyncio.Future()
+
+    def log_registered_handlers(self):
+        """
+        Log all registered handlers in a readable format.
+        """
+        self.logger.debug("Registered Handlers:")
+        for message_type, handler in self.message_handlers.items():
+            self.logger.debug(
+                f"\n\tMessage Type:\t\t {message_type}\n"
+                f"\tHandler Function:\t {handler.func.__name__}\n"
+                f"\tRequired Args:\t\t {handler.required_args}\n"
+                f"\tSettings:\t\t {handler.settings}\n"
+            )
 
     async def signaling_handler(self, websocket):
         """
@@ -87,11 +106,11 @@ class SignalingServer:
             return
         
         try:
-            func:function = handler_config.func
+            func:Callable = handler_config.func
             settings:MessageHandlerSettings = handler_config.settings
             
-            if settings.log_execution:
-                self.logger.debug(f"Executing handler `{func.__name__}` for message type: {message_type}")
+            # if settings.log_execution:
+            self.logger.info(f"Executing handler `{func.__name__}` for message type: {message_type}")
 
             # Dynamic args building based on required_args for current handler
             # Retreive locals for each name
@@ -106,11 +125,11 @@ class SignalingServer:
     Message registrars. Are used to map MessageType -> Handler. 1:1
     """
 
-    def register_handler(self, message_type: MessageType, func: function, settings: MessageHandlerSettings = None):
+    def register_handler(self, message_type: MessageType, settings: MessageHandlerSettings = None):
         """
         Register handler for specific message type.
         """
-        def decorator(func):
+        def decorator(func, settings=settings):
             required_args = self.validate_handler_args(func)
 
             if settings is None:
@@ -118,8 +137,7 @@ class SignalingServer:
 
             self.message_handlers[message_type] = MessageHandler(func=func, settings=settings, required_args=required_args)
             self.supported_message_types.add(message_type)
-            self.logger.debug(f"Registered handler for {message_type}: `{func.__name__}`")
-            self.logger.debug(f"Handler args: {required_args}")
+            self.logger.debug(f"Registered handler for {message_type}: {func.__name__}: {required_args}")
             return func
         return decorator
 
@@ -140,10 +158,8 @@ class SignalingServer:
         Server will send a message to send_to.websocket: 
         {type: MessageType, message:{...}}
         """
-        if send_to.websocket.open:
-            await send_to.websocket.send(message.to_json())
-        else:
-            self.logger.warn(f"WebSocket for client {send_to.id} ({send_to.name}) is closed.")
+        self.logger.debug(f"Sending message to {send_to.name} ({send_to.id}): {message.to_json()}")
+        await send_to.websocket.send(message.to_json())
 
     async def broadcast_message(self, sender:any, message:BaseMessage, include_sender=False, from_server=False):
         """
@@ -152,17 +168,21 @@ class SignalingServer:
         :param sender: User or None (None for msgs from server).
         """
         tasks = []
-        receivers = self.connected_clients.values()
+        receivers = list(self.connected_clients.values())        
 
         if from_server == True:
             include_sender = False
 
+        if not include_sender and not from_server:
+            receivers = [receiver for receiver in receivers if receiver != sender]
+        
+        self.logger.debug(f"{receivers=}")
         receiver:User = None
         for receiver in receivers:
-            if include_sender and receiver.id != sender.id:
-                tasks.append(self.send_new_message(send_to=receiver, message=message))
+            tasks.append(self.send_new_message(send_to=receiver, message=message))
 
         try:
+            self.logger.debug(f"Tasks: {tasks}")
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
             self.logger.error(f"Failed to broadcast message: {e}")
@@ -172,7 +192,7 @@ class SignalingServer:
     """
 
     @staticmethod
-    def validate_handler_args(handler:function) -> list[str]:
+    def validate_handler_args(handler:Callable) -> list[str]:
         """
         Check if all handler parameters are in SignalingServer.SUPPORTED_HANDLER_ARGS
 
@@ -204,14 +224,24 @@ class SignalingServer:
 
         match message:
             case {"type": str(message_type), "payload": dict(payload)}:
+
+                try:
+                    message_type = MessageType(message_type)
+                except:
+                    self.logger.error(f"Could not convert {message_type} to MessageType() enum object")
+                    raise ValueError(f"Invalid message type: {message_type}")
+
                 if message_type not in self.supported_message_types:
+                    self.logger.error(f"Message type {message_type} is not within the support message types. Allowed types: {self.supported_message_types}")
                     raise ValueError(f"Unsupported message type: {message_type}")
+                
             case _:
                 raise ValueError(f"Invalid message format: {message}")
             
         return message_type, payload
 
 
-
+logger = get_logger(__name__)
+logger.setLevel(logging.DEBUG)
 # Empty object to register handler in the future
-signaling_server = SignalingServer()
+signaling_server = SignalingServer(logger=logger)

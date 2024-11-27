@@ -1,12 +1,12 @@
 from enum import Enum
 
 class MessageType(Enum):
-    CONFIRM_ID = "confirmId"
-    JOIN = "join"
-    CLIENTS = "clients"
+    CONFIRM_ID = "CONFIRM_ID"
+    JOIN = "JOIN"
+    CLIENTS = "CLIENTS"
     
     # WebRPC Types
-    OFFER = "offer"
-    ANSWER = "answer"
-    CANDIDATE = "candidate"
+    OFFER = "OFFER"
+    ANSWER = "ANSWER"
+    CANDIDATE = "CANDIDATE"
 
