@@ -13,7 +13,7 @@ WebRTC sandbox.
     * Maybe add some testing
     * ???
 ```
-![Cat_Dance.gif](https://i.pinimg.com/originals/23/51/bc/2351bc65b2b5d75cef146b7edddf805b.gif)
+![Cat_Dance.gif?](https://github.com/LuvellCode/WebRTC-Madness/blob/main/why_is_the_cat_here.gif)
 ---
 ## Most interesting files. Features
  * `signaling_server.py` (websockets)
