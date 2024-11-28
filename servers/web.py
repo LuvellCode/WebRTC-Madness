@@ -1,4 +1,5 @@
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+from logging import Logger
 from socketserver import TCPServer
 import json
 import os
@@ -7,13 +8,14 @@ from config import SIGNALING_SERVER, SIGNALING_HOST, WEB_SERVER_PORT, WEB_SERVER
 
 
 class WebServerHandler(SimpleHTTPRequestHandler):
+    """
+    Just a dummy server for files loading
+    """
     def __init__(self, *args, **kwargs):
-        # Встановлюємо базову директорію для статичних файлів
         self.base_dir = os.path.join(os.getcwd(), 'web')
         super().__init__(*args, **kwargs)
 
     def do_GET(self):
-        # Обробка спеціальних маршрутів
         if self.path == '/config':
             return self.handle_config()
 
@@ -23,7 +25,6 @@ class WebServerHandler(SimpleHTTPRequestHandler):
         return self.handle_static_files()
 
     def handle_config(self):
-        """Обробка запиту на /config"""
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
@@ -33,17 +34,13 @@ class WebServerHandler(SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(config_data).encode('utf-8'))
 
     def handle_root(self):
-        """Обробка запиту на корінь /"""
         self.path = '/index.html'
         return self.handle_static_files()
 
     def handle_static_files(self):
-        """Обробка запиту на статичні файли"""
-        # Побудова повного шляху до файлу
         file_path = os.path.join(self.base_dir, self.path.lstrip('/'))
         print(f"{file_path=}")
 
-        # Якщо файл існує, віддаємо його
         if os.path.isfile(file_path):
             with open(file_path, 'rb') as file:
                 self.send_response(200)
@@ -52,15 +49,11 @@ class WebServerHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(file.read())
             return
 
-        # Якщо файл не знайдено, повертаємо 404
         self.send_error(404, "File not found")
 
-
 def run_web_server():
-    # Створення HTTP сервера
     httpd = HTTPServer((SIGNALING_HOST, WEB_SERVER_PORT), WebServerHandler)
 
-    # Налаштування SSL через SSLContext
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(certfile="server.crt", keyfile="server.key")
     httpd.socket = context.wrap_socket(httpd.socket, server_side=True)

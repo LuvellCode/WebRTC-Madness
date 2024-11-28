@@ -10,14 +10,14 @@ from servers.logging_config import get_logger
 async def main():
     logger = get_logger(__name__)
     logger.setLevel(logging.DEBUG)
-    #print("\nGenerating cert....")
+    #logger.info("Generating cert....")
     #gen_cert() # Auto-generating cert
 
-    # print("\nStarting WEB....")
-    #web_thread = Thread(target=run_web_server, daemon=True)
-    #web_thread.start()
+    logger.info("Starting WEB....")
+    web_thread = Thread(target=run_web_server, daemon=True)
+    web_thread.start()
 
-    print("\nStarting SIGNAL....")
+    logger.info("Starting SIGNAL....")
     await run_signaling_server()
 
 if __name__ == "__main__":

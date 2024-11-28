@@ -73,6 +73,87 @@
             border: none;
             border-radius: 4px;
         }
+
+        #chatUI {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            max-width: 400px;
+            margin: 20px auto;
+            background-color: #f9f9f9;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        #chatMessages {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            background-color: #ffffff;
+            margin-bottom: 10px;
+        }
+
+        #chatMessages p {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 5px;
+            word-wrap: break-word;
+        }
+
+        #chatMessages p.user-message {
+            background-color: #d1e7dd; /* Світло-зелений для власних повідомлень */
+            text-align: right;
+        }
+
+        #chatMessages p.remote-message {
+            background-color: #e9ecef; /* Світло-сірий для віддалених повідомлень */
+            text-align: left;
+        }
+
+        #chatInput {
+            width: 70%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+            margin-right: 5px;
+        }
+
+        #sendButton {
+            padding: 8px 12px;
+            background-color: #007bff;
+            color: #ffffff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #sendButton:hover {
+            background-color: #0056b3;
+        }
+
+        /* Ефект для клієнтів */
+        .client {
+            margin: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f5f5f5;
+            text-align: center;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .client p {
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .client audio {
+            margin-top: 10px;
+            display: block;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -86,11 +167,22 @@
 
     <h1>WebRTC Multi-Client</h1>
     <p id="status">Click the button to start the connection!</p>
-    <button id="startCall" disabled="true">Start Call</button>
-    <button id="muteSelf" disabled="true">Mute Self</button>
+    <button id="serverConnect">Connect to Server</button>
+    <button id="startCall" hidden>Start Call</button>
+    <button id="muteSelf" hidden>Mute Self</button>
+    <div id="chatUI">
+        <div id="chatMessages" style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; max-height: 200px; overflow-y: auto;">
+            <!-- Messages will appear here -->
+        </div>
+        <input type="text" id="chatInput" placeholder="Type a message" style="width: 80%; padding: 5px;">
+        <button id="sendButton" style="padding: 5px 10px;">Send</button>
+    </div>
     <div class="client-grid" id="clientGrid">
         <!-- Users will be displayed here -->
     </div>
+    <script src="includes/User.js"></script>
+    <script src="includes/WebSocketClient.js"></script>
+    <script src="includes/AppManager.js"></script>
     <script src="client.js"></script>
 </body>
 </html>
