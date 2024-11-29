@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import inspect
 import logging
 from typing import Any, Callable
-from servers.includes.enums import MessageType
+from servers.includes.enums import MessageType, RTC_MESSAGE_TYPES
 from servers.includes.models import User
 from servers.includes.messages import BaseMessage
 from servers.logging_config import get_logger
@@ -31,7 +31,7 @@ class MessageHandler:
 
 class SignalingServer:
 
-    SUPPORTED_HANDLER_ARGS = {"user", "payload", "message_type"}
+    SUPPORTED_HANDLER_ARGS = {"user", "target", "payload", "message_type"}
     """ A whitelist for locals(). All other vars will not be passed"""
 
     def __init__(self, host=None, port=None, logger:logging.Logger=None, ssl_context=None):
@@ -95,7 +95,7 @@ class SignalingServer:
         try:
             # Even if the payload is not used directly, it WILL (may) be used
             # when creating args!!!
-            message_type, payload = self.validate_message_structure(message)
+            message_type, target, payload = self.validate_message_structure(message)
         except ValueError as e:
             self.logger.error(e)
             return
@@ -110,7 +110,7 @@ class SignalingServer:
             settings:MessageHandlerSettings = handler_config.settings
             
             # if settings.log_execution:
-            self.logger.info(f"Executing handler `{func.__name__}` for message type: {message_type}")
+            self.logger.info(f"Executing handler `{func.__name__}` for user {user.name}, message type: {message_type}")
 
             # Dynamic args building based on required_args for current handler
             # Retreive locals for each name
@@ -215,16 +215,15 @@ class SignalingServer:
         Check if incoming message structure (OR MAYBE EVEN OUTCOMING OMG THIS IS CO GENERIC, i love it)
 
         :returns: 
-            1. message_type
-
+            1. message_type\n
             2. payload
+            3. target (optional, None if not present)
         :raises ValueError: If the message structure is invalid or unsupported.
         :rtype: tuple[str, dict]
         """
 
         match message:
-            case {"type": str(message_type), "payload": dict(payload)}:
-
+            case {"type": str(message_type), "payload": dict(payload), **extra}:
                 try:
                     message_type = MessageType(message_type)
                 except:
@@ -235,10 +234,19 @@ class SignalingServer:
                     self.logger.error(f"Message type {message_type} is not within the support message types. Allowed types: {self.supported_message_types}")
                     raise ValueError(f"Unsupported message type: {message_type}")
                 
+                target = extra.get("target", None)
+                if message_type in RTC_MESSAGE_TYPES:
+                    try:
+                        target = self.connected_clients[target["id"]]
+                    except:
+                        raise ValueError(f"Message type {message_type} is within RTC_MESSAGE_TYPES. Could not extract target. Given Message: {message}")
+                
+                
+                
             case _:
                 raise ValueError(f"Invalid message format: {message}")
             
-        return message_type, payload
+        return message_type, target, payload
 
 
 logger = get_logger(__name__)

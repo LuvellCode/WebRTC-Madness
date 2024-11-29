@@ -18,16 +18,19 @@ async def test_signaling_server():
 
     async with websockets.connect(uri, ssl=ssl_context) as websocket:
         
-        
         await websocket.send(json.dumps({"type": "CONFIRM_ID", "payload": {"name": f"TestUser{random.randint(0,100)}"}}))
         response = await websocket.recv()
         print(f"Server response: {response}")
 
         
         await websocket.send(json.dumps({"type": "JOIN", "payload": {}}))
+        response = json.loads(await websocket.recv())
+        print(f"Server response: {response}")
+        
+        target = response["payload"]["user"]
+        await websocket.send(json.dumps({"type": "OFFER", "target": target, "payload": {"Dummy": "Offer"}}))
         response = await websocket.recv()
         print(f"Server response: {response}")
-
         # Not expected. TBD
         # await websocket.send(json.dumps({"type": "OFFER", "payload": {"sdp": "fake-sdp-offer"}}))
         # response = await websocket.recv()

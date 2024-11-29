@@ -10,3 +10,7 @@ class MessageType(Enum):
     ANSWER = "ANSWER"
     CANDIDATE = "CANDIDATE"
 
+
+RTC_MESSAGE_TYPES = [
+    MessageType.OFFER, MessageType.ANSWER, MessageType.CANDIDATE
+]

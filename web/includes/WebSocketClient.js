@@ -51,8 +51,16 @@ class WebSocketClient {
     }
 
     send(type, payload) {
-        const message = JSON.stringify({ type, payload });
-        this.logger.info(`[WebSocket] Sending message to server with type ${type}: `, payload)
+        let msg = { type, payload };
+        const message = JSON.stringify(msg);
+        this.logger.info(`[WebSocket] Sending message to server with type ${type}: `, msg)
+        this.socket.send(message);
+    }
+
+    send_to(type, target, payload) {
+        let msg = { type, target: target.getInfo(), payload };
+        const message = JSON.stringify(msg);
+        this.logger.info(`[WebSocket] Sending message to ${target.name} with type ${type}: `, msg)
         this.socket.send(message);
     }
 

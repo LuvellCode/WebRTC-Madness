@@ -43,3 +43,12 @@ class JoinMessage(BaseMessage):
     """
     def __init__(self, user:User):
         super().__init__(type=MessageType.JOIN, payload={"user": user.to_dict()})
+
+
+@dataclass
+class RTCMessage(BaseMessage):
+    """
+    Message when User is establishing the P2P call.
+    """
+    def __init__(self, message_type: MessageType, user:User, payload:dict):
+        super().__init__(type=message_type, payload={"user": user.to_dict(), **payload})

@@ -82,11 +82,7 @@ serverConnectButton.addEventListener('click', async () => {
             sendButton.addEventListener("click", () => {
                 const message = chatInput.value.trim();
                 if (message) {
-                    for (const remoteUserId of app.remoteUsers.keys()) {
-                        app.sendMessage(remoteUserId, message);
-                    }
-                    chatInput.value = "";
-                    app.displayMessage(current_user, message); // Відобразити власне повідомлення
+                    app.broadcastMessageToChannel(message)
                 }
             });
         })

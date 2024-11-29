@@ -2,7 +2,7 @@ import logging
 from config import SIGNALING_HOST, SIGNALING_PORT, SIGNALING_SERVER, SSL_CONTEXT
 from servers.includes.models import User
 from servers.includes.enums import MessageType
-from servers.includes.messages import BaseMessage, JoinMessage, ConfirmIdMessage
+from servers.includes.messages import BaseMessage, JoinMessage, ConfirmIdMessage, RTCMessage
 from servers.signaling_server import signaling_server, MessageHandlerSettings
 
 from servers.logging_config import get_logger
@@ -37,13 +37,13 @@ async def handle_join(user:User, payload:dict):
 @signaling_server.register_handler(MessageType.OFFER)
 @signaling_server.register_handler(MessageType.ANSWER)
 @signaling_server.register_handler(MessageType.CANDIDATE)
-async def handle_rtc(user:User, payload:dict, message_type:MessageType):
+async def handle_rtc(user:User, target:User, payload:dict, message_type:MessageType):
     """
     Server doesn't modify anything in case of RTC requests, just broadcasts it to other clients.
     """
-
-    message = BaseMessage(message_type, payload)
-    await signaling_server.broadcast_message(user, message, include_sender=False)
+    message = RTCMessage(message_type, user, payload)
+    
+    await signaling_server.send_new_message(target, message)
 
 
 async def run_signaling_server():

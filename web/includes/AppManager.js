@@ -6,29 +6,28 @@ class AppManager {
         this.webSocketClient = new WebSocketClient(webSocketUrl, this.logger);
 
         // RTC Config
-        this.rtcConfig = {
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-        };
+        this.rtcConfig = RTC_CONFIG;
 
         // Local Stream
         this.localStream = null;
 
         // Remote Users
-        this.remoteUsers = new Map(); // Key: User ID, Value: User object
-        this.dataChannels = new Map();
+        this.remotePeers = new Map(); // Key: User ID, Value: User object
 
         // Call State
-        this.isCallActive = false;
-
-        // WebSocket onOpen Callback
-        this.webSocketClient.onOpen = () => this.onWebSocketOpen();
+        this.isCallActive = false;        
     }
 
     async start() {
         this.logger.info("[AppManager] Starting application...");
 
+        serverConnectButton.hidden = true;
+
         // Register WebSocket handlers
         this.registerWebSocketHandlers();
+
+        // WebSocket onOpen Callback
+        this.webSocketClient.onOpen = () => this.onWebSocketOpen();
 
         // Connect WebSocket
         this.webSocketClient.connect();
@@ -48,22 +47,19 @@ class AppManager {
 
             // UI Updates
             startCallButton.hidden = false;
-            serverConnectButton.hidden = true;
 
             // One-time start call button
             const startCallHandler = async () => {
                 await this.startLocalStream();
             
-                // Додаємо локальний стрім до current_user
+                // Add local stream to curr_user (why tho)
                 current_user.stream = this.localStream;
             
                 this.isCallActive = true; // Enable call-related actions
             
-                // Надсилаємо JOIN-повідомлення на сервер
-                this.webSocketClient.send(MessageType.JOIN, {
-                    user: current_user.getInfo()
-                });
-            
+                // Send JOIN
+                this.webSocketClient.send(MessageType.JOIN, {});
+                
                 startCallButton.hidden = true;
                 muteSelfButton.hidden = false;
             
@@ -78,23 +74,18 @@ class AppManager {
                 return;
             }
 
-            const remoteUser = User.fromPayload(payload.user);
+            let remoteUser = User.fromPayload(payload.user);
             this.logger.info('[AppManager] New client joined', remoteUser);
 
-            if (!this.remoteUsers.has(remoteUser.id)) {
-                this.remoteUsers.set(remoteUser.id, remoteUser);
+            if (!this.remotePeers.has(remoteUser.id)) {
+                this.remotePeers.set(remoteUser.id, remoteUser);
 
-                const peerConnection = this.createPeerConnection(remoteUser);
-                remoteUser.setPeerConnection(peerConnection);
+                this.createPeerConnection(remoteUser);
 
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
+                const offer = await remoteUser.peerConnection.createOffer();
+                await remoteUser.peerConnection.setLocalDescription(offer);
 
-                this.webSocketClient.send(MessageType.OFFER, {
-                    user: current_user.getInfo(),
-                    sdp: offer.sdp,
-                    target: remoteUser.id
-                });
+                this.webSocketClient.send_to(MessageType.OFFER, remoteUser, {sdp: offer.sdp});
             }
             else {
                 this.logger.warn(`[AppManager] JOIN message ignored as user already joined`, remoteUser)
@@ -102,24 +93,30 @@ class AppManager {
         });
 
         this.webSocketClient.registerHandler(MessageType.OFFER, async (payload) => {
-            let remoteUser = this.remoteUsers.get(payload.user.id);
+            let remoteUser = this.remotePeers.get(payload.user.id);
         
-            // Якщо клієнт ще не існує, створити його
+            // Create user if not found
             if (!remoteUser) {
-                this.logger.info(`[AppManager] OFFER received from new user. Adding user to remoteUsers.`);
+                this.logger.info(`[AppManager] OFFER received from new user. Adding user to remotePeers.`);
                 remoteUser = User.fromPayload(payload.user);
-                this.remoteUsers.set(remoteUser.id, remoteUser);
+                this.remotePeers.set(remoteUser.id, remoteUser);
             }
         
-            // Створення PeerConnection для цього клієнта
-            const peerConnection = this.createPeerConnection(remoteUser);
-            remoteUser.setPeerConnection(peerConnection);
+            this.logger.log("Before creating conn", remoteUser);
+        
+            // Create PeerConnection for remoteUser
+            this.createPeerConnection(remoteUser);
+        
+            const peerConnection = remoteUser.peerConnection; // Extracting the created connection
+            this.logger.log("After creating conn", remoteUser);
         
             try {
-                // Встановлюємо Remote Description
-                await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: payload.sdp }));
+                // Setting Offer
+                await peerConnection.setRemoteDescription(
+                    new RTCSessionDescription({ type: "offer", sdp: payload.sdp })
+                );
         
-                // Обробка відкладених кандидатів
+                // Trickle RPC issue: handling pending candidates
                 if (remoteUser.pendingCandidates) {
                     for (const candidate of remoteUser.pendingCandidates) {
                         await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
@@ -128,15 +125,12 @@ class AppManager {
                     remoteUser.pendingCandidates = [];
                 }
         
-                // Генеруємо Answer
                 const answer = await peerConnection.createAnswer();
+
                 await peerConnection.setLocalDescription(answer);
         
-                // Надсилаємо Answer назад ініціатору
-                this.webSocketClient.send(MessageType.ANSWER, {
-                    user: current_user.getInfo(),
-                    sdp: answer.sdp,
-                });
+                // Replying to OFFER with ANSWER
+                this.webSocketClient.send_to(MessageType.ANSWER, remoteUser, {sdp: answer.sdp});
         
                 this.logger.info(`[AppManager] Answer sent to user: ${remoteUser.name} (${remoteUser.id})`);
             } catch (error) {
@@ -145,56 +139,54 @@ class AppManager {
         });
 
         this.webSocketClient.registerHandler(MessageType.ANSWER, async (payload) => {
-            const remoteUser = this.remoteUsers.get(payload.user.id);
+            const remoteUser = this.remotePeers.get(payload.user.id);
             if (!remoteUser || !remoteUser.getPeerConnection()) {
                 this.logger.warn(`[AppManager] ANSWER received, but no PeerConnection exists for user: ${payload.user.name}`);
                 return;
             }
         
-            const peerConnection = remoteUser.getPeerConnection();
-        
-            // Перевірка стану
-            if (peerConnection.signalingState !== 'have-local-offer') {
-                this.logger.warn(`[AppManager] Skipping ANSWER. Current signalingState: ${peerConnection.signalingState}`);
-                return;
-            }
-        
             try {
-                await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: payload.sdp }));
+                await remoteUser.peerConnection.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: payload.sdp }));
                 this.logger.info(`[AppManager] Remote description set successfully for user: ${remoteUser.name}`);
         
-                // Обробка відкладених кандидатів
+                // Trickle RPC issue: handling pending candidates
                 if (remoteUser.pendingCandidates) {
                     for (const candidate of remoteUser.pendingCandidates) {
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                        await remoteUser.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
                         this.logger.info(`[AppManager] Processed pending ICE candidate for user: ${remoteUser.name}`);
                     }
                     remoteUser.pendingCandidates = [];
                 }
+
             } catch (error) {
                 this.logger.error(`[AppManager] Failed to set remote description for ${remoteUser.name}: ${error}`);
             }
         });
 
         this.webSocketClient.registerHandler(MessageType.CANDIDATE, async (payload) => {
-            const remoteUser = this.remoteUsers.get(payload.user.id);
-            if (!remoteUser || !remoteUser.getPeerConnection()) {
+            const remoteUser = this.remotePeers.get(payload.user.id);
+            if (!remoteUser || !remoteUser.peerConnection) {
                 this.logger.warn(`[AppManager] CANDIDATE received, but no PeerConnection exists for user: ${payload.user.name}`);
                 return;
             }
-        
-            const peerConnection = remoteUser.getPeerConnection();
-        
-            // Перевірка наявності RemoteDescription
-            if (!peerConnection.remoteDescription) {
-                this.logger.warn(`[AppManager] Storing ICE candidate for later processing. User: ${remoteUser.name}`);
-                remoteUser.pendingCandidates = remoteUser.pendingCandidates || [];
-                remoteUser.pendingCandidates.push(payload.candidate);
-                return;
-            }
-        
+
             try {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(payload.candidate));
+
+                if (!remoteUser.peerConnection.remoteDescription) {
+                    // In case of Trickle RTC we should postpone the ICE Candidates processing.
+                    // They can leak before actually answering and establishing the P2P connection
+                    this.logger.warn(`[AppManager] Storing ICE candidate for later processing. User: ${remoteUser.name}`);
+                    remoteUser.pendingCandidates = remoteUser.pendingCandidates || [];
+                    remoteUser.pendingCandidates.push(payload.candidate);
+                    return;
+                }
+
+                if (!payload.candidate) {
+                    await remoteUser.peerConnection.addIceCandidate(null)
+                } else {
+                    await remoteUser.peerConnection.addIceCandidate(payload.candidate)
+                }
+            
                 this.logger.info(`[AppManager] Added ICE candidate for user: ${remoteUser.name}`);
             } catch (error) {
                 this.logger.error(`[AppManager] Failed to add ICE candidate for ${remoteUser.name}: ${error}`);
@@ -207,8 +199,7 @@ class AppManager {
     
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
-                this.webSocketClient.send(MessageType.CANDIDATE, {
-                    user: current_user.getInfo(),
+                this.webSocketClient.send_to(MessageType.CANDIDATE, remoteUser, {
                     candidate: event.candidate,
                 });
             }
@@ -222,30 +213,20 @@ class AppManager {
     
         peerConnection.ondatachannel = (event) => {
             this.logger.info(`[AppManager] DataChannel received from ${remoteUser.name}`);
-            // remoteUser.setDataChannel(event.channel);
-            this.setupDataChannel(remoteUser, event.channel)
-            // remoteUser.getDataChannel().onmessage = (e) => {
-            // event.channel.onmessage = (e) => {
-            //     this.logger.info(`[AppManager] Message received from ${remoteUser.name}: ${e.data}`);
-            // };
+            this.setupDataChannel(remoteUser, event.channel);
         };
     
         if (this.localStream) {
             this.localStream.getTracks().forEach((track) => peerConnection.addTrack(track, this.localStream));
         }
+
+        if (!remoteUser.dataChannel) {
+            const dataChannel = peerConnection.createDataChannel("chat");
+            this.setupDataChannel(remoteUser, dataChannel);
+            this.logger.info(`[AppManager] DataChannel initialized for user: ${remoteUser.name}`);
+        }
     
-        // Створення DataChannel для ініціатора
-        const dataChannel = peerConnection.createDataChannel("chat");
-        remoteUser.setDataChannel(dataChannel);
-    
-        dataChannel.onopen = () => {
-            this.logger.info(`[AppManager] DataChannel opened with ${remoteUser.name}`);
-        };
-    
-        dataChannel.onclose = () => {
-            this.logger.info(`[AppManager] DataChannel closed with ${remoteUser.name}`);
-        };
-    
+        remoteUser.setPeerConnection(peerConnection);
         this.logger.info(`[AppManager] PeerConnection created for user: ${remoteUser.name}`);
         return peerConnection;
     }
@@ -265,24 +246,36 @@ class AppManager {
             this.displayMessage(remoteUser, message);
         };
     
-        this.dataChannels.set(remoteUser.id, dataChannel);
+        remoteUser.dataChannel = dataChannel;
+    }
+
+    broadcastMessageToChannel(message) {
+        for (const remoteUserId of app.remotePeers.keys()) {
+            app.sendMessage(remoteUserId, message);
+        }
+        chatInput.value = "";
+        app.displayMessage(current_user, message);
     }
 
     sendMessage(userId, message) {
-        const remoteUser = this.remoteUsers.get(userId);
+        const remoteUser = this.remotePeers.get(userId);
         if (!remoteUser) {
             this.logger.warn(`[AppManager] Cannot send message. User with ID ${userId} not found.`);
             return;
         }
     
-        const dataChannel = remoteUser.getDataChannel();
+        const dataChannel = remoteUser.dataChannel;
         if (!dataChannel || dataChannel.readyState !== "open") {
             this.logger.warn(`[AppManager] Cannot send message. DataChannel not open for user ID: ${userId}`);
             return;
         }
     
-        dataChannel.send(message);
-        this.logger.info(`[AppManager] Message sent to ${userId}: ${message}`);
+        try {
+            dataChannel.send(message);
+            this.logger.info(`[AppManager] Message sent to ${userId}: ${message}`);
+        } catch (error) {
+            this.logger.error(`[AppManager] Failed to send message to ${userId}: ${error}`);
+        }
     }
 
     displayMessage(remoteUser, message) {
@@ -292,19 +285,15 @@ class AppManager {
             return;
         }
     
-        // Визначаємо, чи це повідомлення від поточного користувача
         const isCurrentUser = remoteUser.id === current_user.id;
     
-        // Створюємо елемент повідомлення
         const messageElement = document.createElement('p');
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         messageElement.textContent = `[${time}] ${isCurrentUser ? "You" : remoteUser.name}: ${message}`;
         messageElement.className = isCurrentUser ? "user-message" : "remote-message";
     
-        // Додаємо повідомлення в контейнер
         chatMessages.appendChild(messageElement);
-    
-        // Скрол до останнього повідомлення
+
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
@@ -320,7 +309,7 @@ class AppManager {
             clientGrid.appendChild(userContainer);
         }
         
-        // Оновлюємо або створюємо аудіо-елемент
+        // Create or Update the user Audio
         let audioElement = document.getElementById(`audio-${remoteUser.id}`);
         if (!audioElement) {
             audioElement = document.createElement('audio');
@@ -330,17 +319,17 @@ class AppManager {
             userContainer.appendChild(audioElement);
         }
         
-        // Прив'язуємо потік
+        // Using the stream
         if (remoteUser.stream) {
             audioElement.srcObject = remoteUser.stream;
             if (isCurrentUser) {
-                audioElement.muted = true; // Заглушуємо локальне аудіо
+                audioElement.muted = true; // Mute if local
             }
         } else {
             this.logger.warn(`[AppManager] No stream available for user ${remoteUser.name}`);
         }
         
-        // Додаємо контрол для регулювання гучності
+        // Volume Control
         let volumeSlider = document.getElementById(`volume-${remoteUser.id}`);
         if (!volumeSlider) {
             volumeSlider = document.createElement('input');
@@ -351,7 +340,6 @@ class AppManager {
             volumeSlider.id = `volume-${remoteUser.id}`;
             volumeSlider.style.marginTop = '10px';
             
-            // Додати прослуховування змін гучності
             volumeSlider.addEventListener('input', () => {
                 const volume = parseFloat(volumeSlider.value);
                 if (isCurrentUser) {
@@ -366,7 +354,6 @@ class AppManager {
             userContainer.appendChild(volumeSlider);
         }
         
-        // Встановлюємо початкову гучність
         if (isCurrentUser) {
             volumeSlider.value = this.gainNode.gain.value;
         } else {
@@ -387,29 +374,34 @@ class AppManager {
 
     async startLocalStream() {
         try {
-            // Отримуємо оригінальний стрім
+            // Get current_user stream
             const originalStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
             this.logger.info("[AppManager] Local stream initialized.");
-    
-            // Ініціалізуємо аудіо-контекст
+            
+            const audioTracks = originalStream.getAudioTracks();
+            const videoTracks = originalStream.getVideoTracks();
+            if (audioTracks.length > 0) {
+                this.logger.info(`Using audio device: ${audioTracks[0].label}`);
+            }
+            if (videoTracks.length > 0) {
+                this.logger.info(`Using video device: ${videoTracks[0].label}`);
+            }
+
+            // Initialization
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
     
-            // Джерело для оригінального стріму
+            // Source. We will use gainNode to change the output stream only so the user won't hear it
             const source = this.audioContext.createMediaStreamSource(originalStream);
     
-            // Налаштовуємо gainNode для регулювання гучності
             this.gainNode = this.audioContext.createGain();
             source.connect(this.gainNode);
     
-            // Створюємо новий потік для передачі
             const destination = this.audioContext.createMediaStreamDestination();
             this.gainNode.connect(destination);
     
-            // Зберігаємо стріми
-            this.localStream = destination.stream; // Потік для передачі іншим
-            current_user.stream = originalStream; // Потік для локального відтворення
+            this.localStream = destination.stream;
+            current_user.stream = originalStream;
     
-            // Додаємо локальне аудіо до UI
             this.createAudioElementForUser(current_user, true);
         } catch (error) {
             this.logger.error("[AppManager] Failed to initialize local stream:", error);
