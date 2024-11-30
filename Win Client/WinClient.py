@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack, RTCIceCandidate
 import websockets
 
-import sounddevice as sd
 import numpy as np
 from av import AudioFrame
 
@@ -21,51 +20,74 @@ from config import SIGNALING_SERVER
 from servers.logging_config import get_logger
 from servers.includes.enums import MessageType
 
-class MicrophoneAudioTrack(MediaStreamTrack):
+
+class CustomAudioTrack(MediaStreamTrack):
     """
-    MediaStreamTrack для захоплення системного звуку через WASAPI loopback.
+    By Default: Uses Microphone
     """
     kind = "audio"
 
-    def __init__(self):
+    def __init__(self, rate=48000, channels=2, frames_per_buffer=960):
         super().__init__()
-        self.format = pyaudio.paInt16
-        self.channels = 2
-        self.rate = 48000
-        self.chunk = 1024 * 4
+        self.rate = rate
+        self.channels = channels
+        self.frames_per_buffer = frames_per_buffer
 
-        # Ініціалізація PyAudio
-        self.p = pyaudio.PyAudio()
+        self._timestamp = 0
 
-        # Отримання індексу WASAPI loopback пристрою
-        self.device_index = self.p.get_default_wasapi_loopback().get("index")
-        logger.debug(self.p.get_device_info_by_index(self.device_index))
+        self.pa = pyaudio.PyAudio()
 
-        # Відкриття потоку для захоплення системного звуку
-        self.stream = self.p.open(
-            format=self.format,
-            channels=self.channels,
-            rate=self.rate,
-            input=True,
-            frames_per_buffer=self.chunk,
-            input_device_index=self.device_index,
-        )
+        self.stream_parameters = {
+            "format": pyaudio.paInt16,
+            "channels": self.channels,
+            "rate": self.rate,
+            "input": True,
+            "frames_per_buffer": self.frames_per_buffer
+        }
+
+        self.open_stream()
+
+    def open_stream(self):
+        logger.debug(f"Opening the stream with parameters: {self.stream_parameters}")
+        self.stream = self.pa.open(**self.stream_parameters)
+
+    def stream_read(self):
+        data = np.frombuffer(self.stream.read(self.frames_per_buffer), 
+                             dtype=np.int16)
+        data = data.reshape(-1, 1).T
+        return data
 
     async def recv(self):
-        # Зчитування аудіо даних
-        data = self.stream.read(self.chunk, exception_on_overflow=False)
+        data = self.stream_read()
 
-        # Створення аудіофрейму
-        frame = AudioFrame.from_ndarray(data, layout="stereo")
-        frame.sample_rate = self.rate
-        frame.time_base = fractions.Fraction(1, self.rate)
-        return frame
+        self._timestamp += self.frames_per_buffer
+        pts = self._timestamp
+        time_base = fractions.Fraction(1, self.rate)
+        
+        audio_frame = AudioFrame.from_ndarray(data, format='s16', layout='stereo')
+        audio_frame.sample_rate = self.rate
+        audio_frame.pts = pts
+        audio_frame.time_base = time_base
 
-    def stop(self):
-        # Закриття PyAudio
+        return audio_frame
+
+    def __del__(self):
         self.stream.stop_stream()
         self.stream.close()
-        self.p.terminate()
+        self.pa.terminate()
+
+class MicrophoneAudioTrack(CustomAudioTrack):
+    pass
+
+class LoopbackAudioTrack(CustomAudioTrack):
+    def open_stream(self):
+
+        device_index = self.pa.get_default_wasapi_loopback().get("index")
+        device = self.pa.get_device_info_by_index(device_index)
+        logger.debug(f"Found Loopback device: {device}")
+
+        self.stream_parameters["input_device_index"] = device_index
+        return super().open_stream()
 
 @dataclass
 class WinClient:
@@ -221,11 +243,8 @@ async def signaling_client():
         # Confirm client identity
         await process_confirm_id(websocket)
         
-        # Media setup
-        # player = MediaPlayer("default")
-        # audio_track = MediaStreamTrack(kind="audio", source=player.audio)
-        audio_track = MicrophoneAudioTrack()
-        logger.info("Audio track added")
+        audio_track = LoopbackAudioTrack()
+        logger.info("Audio track created")
 
         await send_message(websocket, MessageType.JOIN, {})
 
