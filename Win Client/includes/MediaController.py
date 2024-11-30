@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Callable
 from winsdk.windows.media.control import (
     GlobalSystemMediaTransportControlsSessionManager as MediaManager
 )
@@ -75,13 +76,13 @@ class MediaController:
     async def previous_track(self):
         await self._perform_action(MediaAction.PREVIOUS)
 
-    async def get_now_playing(self):
+    async def get_now_playing(self, logger_force_disable=False):
         """
         Get Current audio information
         :return: dict or None
         """
         if not self.current_session:
-            if self.logger is not None:
+            if self.logger is not None and not logger_force_disable:
                 self.logger.warning("No active media session available.")
             return None
 
@@ -95,16 +96,27 @@ class MediaController:
                     "track_number": properties.track_number,
                 }
 
-                if self.logger is not None:
+                if self.logger is not None and not logger_force_disable:
                     self.logger.debug(f"Successfully fetched now playing information: {result}")
                 return result
             except Exception as e:
-                if self.logger is not None:
+                if self.logger is not None and not logger_force_disable:
                     self.logger.error(f"Error fetching now playing information: {e}")
                 return None
 
         return await fetch_media_properties()
 
+    async def on_np_update(self, callback:Callable):
+        async def get_np():
+            return await self.get_now_playing(logger_force_disable=True)
+        
+        media_info = await get_np()
+        while True:
+            temp = await get_np()
+            if temp != media_info:
+                callback(temp)
+                # self.logger.warning(f"INFO IS DIFFERENT: {temp}")
+                media_info = temp
 
 
 

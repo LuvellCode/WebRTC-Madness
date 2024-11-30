@@ -109,10 +109,12 @@ class WinClient:
 
 
 logger = get_logger(__name__, logging.DEBUG)
+
 win_streamer = WinClient(name="<b>Win Client</b>")
+data_channels:dict[int,RTCDataChannel] = {}
+
 media_controller = MediaController(logger)
-asyncio.run(media_controller.initialize())
-asyncio.run(media_controller.get_now_playing())
+
 
 async def send_message(websocket, message_type: MessageType, payload):
         message = {"type": message_type.value, "payload": payload}
@@ -144,30 +146,36 @@ async def process_confirm_id(websocket):
         logger.warning(f"Unexpected message received while waiting for CONFIRM_ID: {response}")
 
     logger.info(f"Success: CONFIRM_ID. Full user: {win_streamer.to_dict()}")
-    
+
 async def create_pc(remote_user:WinClient, audio_track: MediaStreamTrack):
     pc_remote = RTCPeerConnection()
     pc_remote.addTrack(audio_track)
     pc_remote.on("iceconnectionstatechange", lambda: logger.info(f"ICE state: {pc_remote.iceConnectionState}"))
 
+    msg_pr = "[DataChannel]"
+
     # Створюємо DataChannel
     data_channel = pc_remote.createDataChannel("chat")
-    logger.info("DataChannel created")
+    logger.info(f"{msg_pr} Created")
 
     # Налаштування подій DataChannel
     @data_channel.on("open")
-    def on_open():
-        data_channel.send("Hey! it's me, uber Windows Client")
-        logger.info("DataChannel is open")
+    async def on_open():
+        logger.info(f"{msg_pr} Opening for user {remote_user.name} ({remote_user.id})...")
+        await on_channel_open(data_channel, remote_user)
+        logger.info(f"{msg_pr} Opened for user {remote_user.name} ({remote_user.id})")
 
     @data_channel.on("close")
-    def on_close():
-        logger.info("DataChannel is closed")
+    async def on_close():
+        logger.info(f"{msg_pr} Closing for user {remote_user.name} ({remote_user.id}).")
+        await on_channel_close(data_channel, remote_user)
+        logger.info(f"{msg_pr} Closed for user {remote_user.name} ({remote_user.id})")
 
     @data_channel.on("message")
     async def on_message(message):
-        logger.debug(f"DataChannel received message from {remote_user.name}: {message}")
+        logger.debug(f"{msg_pr} Message Processing from {remote_user.name}: {message}")
         await on_channel_message(data_channel, remote_user, message)
+        logger.debug(f"{msg_pr} Message Processed for {remote_user.name}")
 
 
     return pc_remote
@@ -235,6 +243,23 @@ async def handle_candidate(payload):
 
 ###########
 
+def send_np_update(media_info:dict):
+    broadcast_to_channels(media_info)
+
+def broadcast_to_channels(message):
+    logger.debug(f"Broadcasting message to all data_channels: {message}")
+    logger.debug(f"channels: {data_channels.keys()}")
+
+    for user_id,data_channel in data_channels.items():
+        data_channel.send(json.dumps(message))
+
+async def on_channel_open(data_channel:RTCDataChannel, remote_user: WinClient):
+    data_channels[remote_user.id] = data_channel
+    data_channel.send("Hey! it's me, uber Windows Client")
+
+async def on_channel_close(data_channel:RTCDataChannel, remote_user: WinClient):
+    del data_channels[remote_user.id]
+
 async def on_channel_message(data_channel:RTCDataChannel, remote_user: WinClient, message: str):
     """
     BOT functionality: play/pause the music, etc.
@@ -295,5 +320,19 @@ async def signaling_client():
         logger.info("WebRTC connection closed")
 
 
+async def main():
+    await media_controller.initialize()
+    await media_controller.get_now_playing()
+
+    background_task = asyncio.create_task(media_controller.on_np_update(send_np_update))
+
+    try:
+        await signaling_client()
+    finally:
+        # Halt the task if it still works
+        background_task.cancel()
+        await background_task
+
 if __name__ == "__main__":
-    asyncio.run(signaling_client())
+
+    asyncio.run(main())
