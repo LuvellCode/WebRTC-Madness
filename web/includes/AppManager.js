@@ -241,7 +241,12 @@ class AppManager {
         };
     
         dataChannel.onmessage = (event) => {
-            const message = event.data;
+            let message = event.data;
+
+            message = message.replace(/\\u[\dA-F]{4}/gi, (match) => {
+                return String.fromCharCode(parseInt(match.replace("\\u", ""), 16));
+            });
+
             this.logger.info(`[AppManager] Message received from ${remoteUser.name}: ${message}`);
             this.displayMessage(remoteUser, message);
         };

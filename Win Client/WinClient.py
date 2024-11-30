@@ -7,7 +7,7 @@ import asyncio
 import logging
 import pyaudiowpatch as pyaudio
 from dataclasses import dataclass, field
-from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack, RTCIceCandidate
+from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack, RTCIceCandidate, RTCDataChannel
 import websockets
 
 import numpy as np
@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))
 from config import SIGNALING_SERVER
 from servers.logging_config import get_logger
 from servers.includes.enums import MessageType
+from includes.MediaController import MediaController, MediaAction
 
 
 class CustomAudioTrack(MediaStreamTrack):
@@ -109,7 +110,9 @@ class WinClient:
 
 logger = get_logger(__name__, logging.DEBUG)
 win_streamer = WinClient(name="<b>Win Client</b>")
-
+media_controller = MediaController(logger)
+asyncio.run(media_controller.initialize())
+asyncio.run(media_controller.get_now_playing())
 
 async def send_message(websocket, message_type: MessageType, payload):
         message = {"type": message_type.value, "payload": payload}
@@ -162,8 +165,10 @@ async def create_pc(remote_user:WinClient, audio_track: MediaStreamTrack):
         logger.info("DataChannel is closed")
 
     @data_channel.on("message")
-    def on_message(message):
+    async def on_message(message):
         logger.debug(f"DataChannel received message from {remote_user.name}: {message}")
+        await on_channel_message(data_channel, remote_user, message)
+
 
     return pc_remote
 
@@ -230,8 +235,28 @@ async def handle_candidate(payload):
 
 ###########
 
-async def signaling_client():
+async def on_channel_message(data_channel:RTCDataChannel, remote_user: WinClient, message: str):
+    """
+    BOT functionality: play/pause the music, etc.
+    """
+    logger.info("Handling new message via external callback...")
+    try:
+        action = MediaAction(message)
+    except:
+        logger.debug("Couldn't convert the msg to MediaAction")
+        return
+    
+    data_channel.send(f"Handling the Media Action {action.name}")
+    result = await media_controller._perform_action_async(action)
 
+    if action == MediaAction.NOW_PLAYING:
+        data_channel.send(json.dumps(result))
+
+
+
+###########
+
+async def signaling_client():
     ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
     ssl_context.load_verify_locations("server.crt")
     ssl_context.check_hostname = False
