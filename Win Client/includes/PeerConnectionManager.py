@@ -24,20 +24,20 @@ class PeerConnectionManager(BetterLog):
 
         @data_channel.on("open")
         async def on_open():
-            self.log_info(f"Opening for user {remote_user.name} ({remote_user.id})...")
+            self.log_debug(f"Opening for user {remote_user.name} ({remote_user.id})...")
             await self.on_channel_open(data_channel, remote_user)
-            self.log_info(f"Opened for user {remote_user.name} ({remote_user.id})")
+            self.log_debug(f"Opened for user {remote_user.name} ({remote_user.id})")
 
         @data_channel.on("close")
         async def on_close():
-            self.log_info(f"Closing for user {remote_user.name} ({remote_user.id}).")
+            self.log_debug(f"Closing for user {remote_user.name} ({remote_user.id}).")
             await self.on_channel_close(data_channel, remote_user)
-            self.log_info(f"Closed for user {remote_user.name} ({remote_user.id})")
+            self.log_debug(f"Closed for user {remote_user.name} ({remote_user.id})")
 
         @data_channel.on("message")
         async def on_message(message):
-            self.log_info(f"Message Processing from {remote_user.name}: {message}")
+            self.log_debug(f"Message Processing from {remote_user.name}: {message}")
             await self.on_channel_message(data_channel, remote_user, message)
-            self.log_info(f"Message Processed for {remote_user.name}")
+            self.log_debug(f"Message Processed for {remote_user.name}")
 
         return pc_remote, data_channel
