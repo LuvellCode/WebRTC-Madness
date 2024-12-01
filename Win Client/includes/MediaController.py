@@ -4,61 +4,56 @@ from typing import Callable
 from winsdk.windows.media.control import (
     GlobalSystemMediaTransportControlsSessionManager as MediaManager
 )
-from winsdk.windows.media.control import GlobalSystemMediaTransportControlsSessionMediaProperties
+
 from .enums.MediaAction import MediaAction
 
-class MediaController:
+from includes.classes.BetterLog import BetterLog
+
+class MediaController(BetterLog):
     def __init__(self, logger: logging.Logger = None):
-        self.logger = logger
+        super().__init__(logger)
         self.sessions = None
         self.current_session = None
 
     async def initialize(self):
-        self.logger.info("Initializing.")
+        self.log_info("Initializing.")
         self.sessions = await MediaManager.request_async()
         self.current_session = self.sessions.get_current_session()
 
         if not self.current_session:
-            if self.logger is not None:
-                self.logger.warning("No active media session found.")
+            self.log_warn("No active media session found.")
             return
         
-        if self.logger is not None:
-            self.logger.info("Media session initialized.")
+        self.log_info("Media session initialized.")
         return
 
 
     async def _perform_action_async(self, action: MediaAction):
         if not self.current_session:
-            if self.logger is not None:
-                self.logger.warning("No active media session available.")
+            self.log_warn("No active media session available.")
             return
 
         try:
-            if action == MediaAction.PLAY:
-                await self.current_session.try_play_async()
-                if self.logger is not None:
-                    self.logger.info("Track resumed.")
-            elif action == MediaAction.PAUSE:
-                await self.current_session.try_pause_async()
-                if self.logger is not None:
-                    self.logger.info("Track paused.")
-            elif action == MediaAction.NEXT:
-                await self.current_session.try_skip_next_async()
-                if self.logger is not None:
-                    self.logger.info("Skipped to next track.")
-            elif action == MediaAction.PREVIOUS:
-                await self.current_session.try_skip_previous_async()
-                if self.logger is not None:
-                    self.logger.info("Skipped to previous track.")
-            elif action == MediaAction.NOW_PLAYING:
-                return await self.get_now_playing()
-            else:
-                if log:
-                    self.logger.error("Unknown action.")
+            match action:
+                case MediaAction.PLAY:
+                    await self.current_session.try_play_async()
+                    self.log_info("Track resumed.")
+                case MediaAction.PAUSE:
+                    await self.current_session.try_pause_async()
+                    self.log_info("Track paused.")
+                case MediaAction.NEXT:
+                    await self.current_session.try_skip_next_async()
+                    self.log_info("Skipped to next track.")
+                case MediaAction.PREVIOUS:
+                    await self.current_session.try_skip_previous_async()
+                    self.log_info("Skipped to previous track.")
+                case MediaAction.NOW_PLAYING:
+                    return await self.get_now_playing()
+                case _:
+                    self.log_error("Unknown action.")
+                
         except Exception as e:
-            if self.logger is not None:
-                self.logger.error(f"Failed to perform action {action.name}: {e}")
+            self.log_error(f"Failed to perform action {action.name}: {e}")
 
     async def _perform_action(self, action: MediaAction):
         # asyncio.run(self._perform_action_async(action))
@@ -82,8 +77,8 @@ class MediaController:
         :return: dict or None
         """
         if not self.current_session:
-            if self.logger is not None and not logger_force_disable:
-                self.logger.warning("No active media session available.")
+            if not logger_force_disable:
+                self.log_warn("No active media session available.")
             return None
 
         async def fetch_media_properties():
@@ -96,12 +91,12 @@ class MediaController:
                     "track_number": properties.track_number,
                 }
 
-                if self.logger is not None and not logger_force_disable:
-                    self.logger.debug(f"Successfully fetched now playing information: {result}")
+                if not logger_force_disable:
+                    self.log_debug(f"Successfully fetched now playing information: {result}")
                 return result
             except Exception as e:
-                if self.logger is not None and not logger_force_disable:
-                    self.logger.error(f"Error fetching now playing information: {e}")
+                if not logger_force_disable:
+                    self.log_debug(f"Error fetching now playing information: {e}")
                 return None
 
         return await fetch_media_properties()
